@@ -46,3 +46,5 @@ First release.
 - `Idempotency`: a handler that raises never leaves its key in progress. The key is
   released by default, or completed with a chosen response with
   `~on_handler_exn:(Record stored)`; a store that raises counts as a store error.
+- `Idempotency.Key_policy`: `strict` (the default, unchanged) and `permissive`, which
+  accepts any non-empty UTF-8 key up to a byte length; passed as `~key_policy`.
