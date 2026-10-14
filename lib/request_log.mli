@@ -2,8 +2,8 @@
 
     The middleware takes the caller's [X-Request-Id] when it is a sensible token (1-128
     characters of [A-Za-z0-9._:-]) and makes one up otherwise, stores it in
-    {!Request.request_id} for handlers (to pass on to downstream calls) and echoes it in
-    the response. When the response is out it hands an {!Entry.t} to the sink.
+    {!Request.request_id} for handlers (to pass on to outgoing calls) and echoes it in the
+    response. When the response is out it hands an {!Entry.t} to the sink.
 
     Secrets are kept out of entries by redaction: header values and query parameters named
     in {!Redact} are replaced by ["REDACTED"], and a hook can rewrite any other value.
