@@ -356,3 +356,52 @@ let%expect_test "Idempotent-Replayed on every response" =
     |}];
   return ()
 ;;
+
+let%expect_test "refusals through a render hook" =
+  let manual = Clock.Manual.create ~start:t0 in
+  let store = Idempotency.Memory_store.create () in
+  let render (_ : Request.t) (p : Problem.t) =
+    Response.json ~status:p.status (`Assoc [ "error", `String p.code ])
+  in
+  let idem =
+    Idem.create
+      ~required:true
+      ~render_problem:render
+      ~store
+      ~clock:(Clock.Manual.clock manual)
+      ()
+  in
+  let gate = Ivar.create () in
+  let app =
+    Idem.middleware idem (fun _ -> Ivar.read gate >>| fun () -> Response.text "ok")
+  in
+  let call ?key body =
+    let headers =
+      Option.value_map key ~default:[] ~f:(fun k -> [ "idempotency-key", k ])
+    in
+    app (Request.create `POST "/t" ~headers ~body)
+  in
+  let show r =
+    print_s
+      [%sexp
+        (Response.status_code r : int)
+        , (r.Response.body : string)
+        , (Response.header r "retry-after" : string option)]
+  in
+  let first = call ~key:"k" "{}" in
+  let%bind () = call ~key:"k" "{}" >>| show in
+  Ivar.fill_exn gate ();
+  let%bind () = first >>| show in
+  let%bind () = call ~key:"k" {|{"x":1}|} >>| show in
+  let%bind () = call "{}" >>| show in
+  let%bind () = call ~key:"bad key" "{}" >>| show in
+  [%expect
+    {|
+    (409 "{\"error\":\"idempotency_key_in_use\"}" (1))
+    (200 ok ())
+    (409 "{\"error\":\"idempotency_key_reused\"}" ())
+    (400 "{\"error\":\"idempotency_key_missing\"}" ())
+    (400 "{\"error\":\"invalid_idempotency_key\"}" ())
+    |}];
+  return ()
+;;
