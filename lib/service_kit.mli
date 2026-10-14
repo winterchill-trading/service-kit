@@ -13,7 +13,8 @@
 
     {2 Safety}
     - {!Idempotency}: [Idempotency-Key] with stored-response replay.
-    - {!Session}: HMAC-signed session tokens with key and token rotation.
+    - {!Session}: HMAC-signed session tokens with key and token rotation, or server-side
+      sessions in a cookie.
     - {!Step_up}: single-purpose, short-lived, session-bound grants.
     - {!Rate_limit}: token buckets per key.
     - {!Cors}: cross-origin rules and preflight.
