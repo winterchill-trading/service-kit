@@ -5,7 +5,7 @@ cohttp-async.
 
 | Module | What it does |
 |--------|--------------|
-| `Router` | Typed routes (`Path.(root / "accounts" /: string "id")` gives the handler a `string` argument), method dispatch with 404/405, a middleware chain |
+| `Router` | Typed routes (`Path.(root / "accounts" /: string "id")` gives the handler a `string` argument), method dispatch with 404/405 (body renderable by a hook), a middleware chain |
 | `Request`, `Response` | The request with its body read and context for middleware; JSON, text and problem responses |
 | `Server` | cohttp-async adapter: body size limit (413), exceptions as 500, peer address |
 | `Problem` | RFC 9457 `application/problem+json` with stable codes and typed params, never free text |
@@ -138,6 +138,20 @@ Route.post Path.(root / "transfers") ~middleware:[ Session.middleware sessions; 
 - Same key while the first is running: 409 `idempotency_key_in_use`, `Retry-After: 1`.
 - 5xx, 401, 403, 409 and 429 answers are not stored, so a retry can succeed.
 - Records expire after `retention` (24 h); `Idem.purge` removes them.
+- A handler that raises never leaves its key in progress: the record is removed, or,
+  with `~on_handler_exn:(Record stored)`, completed with `stored` so retries replay it.
+
+Options on `Idem.create`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `~key_policy` | `Key_policy.strict` (1-255 visible ASCII) | `Key_policy.permissive ~max_bytes ()` accepts any non-empty UTF-8 |
+| `~replayed_header` | `On_replay` | `Always` adds `Idempotent-Replayed: false` to every other unsafe response |
+| `~render_problem` | problem+json | renders the 400, 409 and 503 refusals in the service's own error body |
+| `~on_handler_exn` | `Release` | `Record stored` replays `stored` after a handler raised |
+
+`Router.create ~render_problem` does the same for 404 and 405. Headers the problem carries
+(`Allow`, `Retry-After`) are added to the rendered response when it lacks them.
 
 To persist records, implement `Idempotency.Store` (four functions: an atomic `claim`,
 `complete`, `release`, `purge`) over your database; `Idempotency.Stable.Record.V1` gives
