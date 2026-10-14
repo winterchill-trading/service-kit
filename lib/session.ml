@@ -189,3 +189,28 @@ let of_authorization_header value =
     if String.is_empty token then None else Some token
   | _ -> None
 ;;
+
+let claims_key : Claims.t Univ_map.Key.t =
+  Univ_map.Key.create ~name:"service_kit.session.claims" Claims.sexp_of_t
+;;
+
+let claims req = Request.find req claims_key
+
+let middleware ?(optional = false) t : Router.Middleware.t =
+  fun handler req ->
+  let refuse (p : Problem.t) =
+    return
+      (Response.problem { p with headers = p.headers @ [ "www-authenticate", "Bearer" ] })
+  in
+  let refuse_error e = refuse (Error.to_problem e) in
+  match Request.header req "authorization" with
+  | None when optional -> handler req
+  | None -> refuse (Problem.unauthorized "session_required")
+  | Some value ->
+    (match of_authorization_header value with
+     | None -> refuse_error Malformed
+     | Some token ->
+       Async.Deferred.bind (verify t token) ~f:(function
+         | Error e -> refuse_error e
+         | Ok c -> handler (Request.set req claims_key c)))
+;;

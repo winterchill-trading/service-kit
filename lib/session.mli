@@ -93,3 +93,13 @@ val rotate : t -> string -> (string * Claims.t, Error.t) Result.t Async.Deferred
 (** The token in an [Authorization: Bearer <token>] header value (scheme matched
     case-insensitively). *)
 val of_authorization_header : string -> string option
+
+(** Authenticates requests by their [Authorization: Bearer] token and makes the claims
+    available to handlers through {!claims}. A missing [Authorization] header is answered
+    401 [session_required] and an invalid token by {!Error.to_problem}, both with
+    [WWW-Authenticate: Bearer]; with [optional], a request without any [Authorization]
+    header passes through without claims (an invalid token is still refused). *)
+val middleware : ?optional:bool -> t -> Router.Middleware.t
+
+(** The claims {!middleware} verified for this request. *)
+val claims : Request.t -> Claims.t option
