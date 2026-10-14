@@ -12,7 +12,7 @@ cohttp-async.
 | `Message` | Structured messages (code + typed params) and a catalogue with per-locale templates and coverage checks |
 | `Param` | The typed values problems and messages carry (string, int, bool, decimal, time, list) |
 | `Idempotency` | `Idempotency-Key` per caller, method and route; stored-response replay; 409 on reuse with another body; retention; pluggable store |
-| `Session` | Opaque HMAC-SHA256 tokens, key rotation through a keyring, token rotation up to a maximum lifetime, revocation hook |
+| `Session` | Opaque HMAC-SHA256 tokens, key rotation through a keyring, token rotation up to a maximum lifetime, revocation hook; or server-side sessions in an `HttpOnly` cookie over a pluggable store |
 | `Step_up` | Single-purpose, time-bound, session-bound grants; issue, check, consume once; purposes are the application's variant |
 | `Rate_limit` | Token buckets per key, exact integer arithmetic, time passed in; middleware answering 429 with `Retry-After` |
 | `Request_log` | One structured entry per request, request id propagation (`X-Request-Id`), header and query redaction |
@@ -186,6 +186,33 @@ Grants.require grants ~purpose:Send_payment ~session_id:(fun req ->
 Tokens are `v1.<key id>.<claims>.<mac>`; grants are `su1.<claims>.<mac>`. Both are
 signed, not encrypted: they carry ids and times, never personal data.
 
+### Server-side sessions in a cookie
+
+For browsers, `Session.Server_side` keeps the session record on the server and hands
+out an opaque token (32 random bytes) in a cookie, `__Host-session` with `Secure`,
+`HttpOnly` and `SameSite=Lax` by default. The store sees only the token's SHA-256.
+
+```ocaml
+module Sessions = Session.Server_side (Session.Memory_store)
+
+let sessions =
+  Sessions.create ~store:(Session.Memory_store.create ()) ~clock:Clock.wall ()
+
+(* sign-in handler *)
+let%map issued = Sessions.issue sessions ~subject:customer_id in
+let token, claims = Or_error.ok_exn issued in
+Response.json ~headers:[ Sessions.set_cookie sessions (token, claims) ] (`Assoc [])
+
+(* routes *)
+Route.get Path.(root / "me") ~middleware:[ Sessions.middleware sessions ] me
+```
+
+The middleware binds the same claims as the bearer mode, so `Session.claims` and step-up
+grants work unchanged; `~bearer:true` also accepts the token as `Authorization: Bearer`.
+`Sessions.revoke`, `revoke_session` and `clear_cookie` cover log-out. Implement
+`Session.Store` (insert, find, remove, remove_session, purge) over your database for
+several instances.
+
 ## Verified on
 
 Expect tests and Quickcheck properties cover every module; `test/test_server.ml` runs
@@ -215,5 +242,7 @@ No other org repository depends on service-kit yet.
   design; services write them over their own database.
 - Session claims are signed but readable; there is no encrypted token format (the
   cryptokit on the switch has no AEAD cipher).
+- `Session.Server_side` does not check `Origin`: with `SameSite=None`, protect unsafe
+  requests against CSRF in the service.
 - `Rate_limit` keeps buckets per process; several instances each enforce their own
   limit.
