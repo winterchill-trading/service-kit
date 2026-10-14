@@ -25,8 +25,9 @@
     - {!Metrics}: Prometheus counters, gauges and histograms.
     - {!Clock}: injectable time for all of the above.
 
-    Nothing here touches a database: modules that keep state ({!Idempotency}, {!Step_up})
-    do so behind a small module type with an in-memory implementation. *)
+    Nothing here touches a database: modules that keep state ({!Idempotency}, {!Step_up},
+    server-side {!Session}s) do so behind a small module type with an in-memory
+    implementation. *)
 
 module Clock = Clock
 module Codec = Codec
