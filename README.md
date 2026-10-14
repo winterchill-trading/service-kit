@@ -140,6 +140,8 @@ Route.post Path.(root / "transfers") ~middleware:[ Session.middleware sessions; 
 - Records expire after `retention` (24 h); `Idem.purge` removes them.
 - A handler that raises never leaves its key in progress: the record is removed, or,
   with `~on_handler_exn:(Record stored)`, completed with `stored` so retries replay it.
+  `~on_handler_exn:(Record_exn f)` stores `f exn` instead, so the replayed answer can
+  depend on what was raised (a 502 for an upstream timeout, a 500 otherwise).
 
 Options on `Idem.create`:
 
@@ -148,7 +150,7 @@ Options on `Idem.create`:
 | `~key_policy` | `Key_policy.strict` (1-255 visible ASCII) | `Key_policy.permissive ~max_bytes ()` accepts any non-empty UTF-8 |
 | `~replayed_header` | `On_replay` | `Always` adds `Idempotent-Replayed: false` to every other unsafe response |
 | `~render_problem` | problem+json | renders the 400, 409 and 503 refusals in the service's own error body |
-| `~on_handler_exn` | `Release` | `Record stored` replays `stored` after a handler raised |
+| `~on_handler_exn` | `Release` | `Record stored` replays `stored` after a handler raised; `Record_exn f` replays `f exn` |
 
 `Router.create ~render_problem` does the same for 404 and 405. Headers the problem carries
 (`Allow`, `Retry-After`) are added to the rendered response when it lacks them.
@@ -199,6 +201,17 @@ let grants =
 `Grants.require` then reads the `Idempotency-Key` header; requests without one can use a
 grant only once. Implement `Step_up.Bindings` (one atomic `bind`) over a shared store for
 several instances.
+
+A store over a database should judge expiry by the service's clock, not the database's,
+so that tests with a manual clock and production agree. Implement
+`Step_up.Timed_bindings` instead: its `bind` also receives `~now`, read from the clock
+given to `Grants.create`.
+
+```ocaml
+~mode:(Step_up.Mode.bind_on_first_use_timed (module My_bindings) store)
+```
+
+`Step_up.Memory_bindings.Timed` is the in-memory store in that form.
 
 Tokens are `v1.<key id>.<claims>.<mac>`; grants are `su1.<claims>.<mac>`. Both are
 signed, not encrypted: they carry ids and times, never personal data.
