@@ -1,0 +1,18 @@
+; Examples are built with the rest of the project (and so in CI) but not installed.
+
+(library
+ (name transfers_example)
+ (modules transfers test_transfers)
+ (libraries service-kit core async yojson)
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (preprocess
+  (pps ppx_jane)))
+
+(executables
+ (names transfers_service quick_start)
+ (modules transfers_service quick_start)
+ (libraries service-kit transfers_example core core_unix.command_unix async)
+ (preprocess
+  (pps ppx_jane)))
