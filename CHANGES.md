@@ -65,3 +65,11 @@ First release.
   so a timed-out payment can be retried with the same grant. `Make.use` takes the
   binding; `Make.create ~mode` and `Make.require ~operation` select and name it. The
   default stays single use.
+- `Idempotency.Failure.Record_exn`: `~on_handler_exn:(Record_exn f)` completes the key
+  with `f exn`, a response computed from the exception the handler raised. A function
+  that raises is reported to `on_store_error` and the key is released. `Record stored`
+  is unchanged.
+- `Step_up.Timed_bindings`, `Step_up.Mode.bind_on_first_use_timed` and
+  `Step_up.Memory_bindings.Timed`: binding stores whose `bind` receives `~now` from the
+  clock given to `Make.create`, so a shared store judges expiry by the same clock as the
+  grant checker. `Step_up.Bindings` is unchanged.
