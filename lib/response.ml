@@ -46,3 +46,11 @@ let with_header t name value =
       @ [ name, value ]
   }
 ;;
+
+let render_problem ~render req (p : Problem.t) =
+  let resp = render req p in
+  let missing =
+    List.filter p.headers ~f:(fun (name, _) -> Option.is_none (header resp name))
+  in
+  { resp with headers = resp.headers @ missing }
+;;

@@ -39,3 +39,9 @@ val header : t -> string -> string option
 
 (** [t] with a header added, replacing any header of the same name. *)
 val with_header : t -> string -> string -> t
+
+(** [render_problem ~render req p] is [render req p], plus every header of [p] (such as
+    [Allow] or [Retry-After]) the rendered response does not set itself. Modules that
+    refuse requests on their own ({!Router}, {!Idempotency}) take such a [render] so
+    refusals can use a service's own error body instead of a problem document. *)
+val render_problem : render:(Request.t -> Problem.t -> t) -> Request.t -> Problem.t -> t
