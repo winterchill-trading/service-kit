@@ -43,3 +43,6 @@ First release.
   `limit` parsing and pages from an over-fetch.
 - `Clock`: injectable time with a manual clock.
 - Examples: `quick_start` and a transfers service with end-to-end expect tests.
+- `Idempotency`: a handler that raises never leaves its key in progress. The key is
+  released by default, or completed with a chosen response with
+  `~on_handler_exn:(Record stored)`; a store that raises counts as a store error.
