@@ -24,11 +24,12 @@
     If the handler raises, the key never stays in progress: by default the record is
     removed so a retry runs again; with [~on_handler_exn:(Record stored)] it is completed
     with [stored] (say a 500 problem) so retries replay that answer instead of running a
-    handler that may have done part of its work. A store that raises counts as one that
-    answers [Error]. If storing the finished response fails, the record stays in progress:
-    retries are refused until [stale_after] has passed, then the request runs again.
-    Handlers that move money should also pass the key on to their providers so a second
-    run finds the first one's result. *)
+    handler that may have done part of its work; [~on_handler_exn:(Record_exn f)] stores
+    [f exn] instead, so the answer can depend on what was raised. A store that raises
+    counts as one that answers [Error]. If storing the finished response fails, the record
+    stays in progress: retries are refused until [stale_after] has passed, then the
+    request runs again. Handlers that move money should also pass the key on to their
+    providers so a second run finds the first one's result. *)
 
 open! Core
 
@@ -114,6 +115,10 @@ module Failure : sig
     | Record of Stored.t
     (** complete the record with this response, so retries replay it; if that write fails,
         the record is removed instead *)
+    | Record_exn of (exn -> Stored.t)
+    (** like [Record], with the response computed from the exception the handler raised
+        (say a 500 problem for most, a 502 for a provider timeout). If the function itself
+        raises, its error goes to [on_store_error] and the record is removed *)
 end
 
 (** Which responses carry [Idempotent-Replayed]. *)

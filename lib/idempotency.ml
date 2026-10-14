@@ -144,6 +144,7 @@ module Failure = struct
   type t =
     | Release
     | Record of Stored.t
+    | Record_exn of (exn -> Stored.t)
 end
 
 module Replayed_header = struct
@@ -302,14 +303,24 @@ module Make (Store : Store) = struct
   (* After a handler raised: either free the key or complete it with the configured
      answer. If completing fails, releasing is the fallback; if that fails too, the record
      is taken over once [stale_after] has passed. *)
-  let after_exn t scope =
+  let after_exn t scope exn =
+    let record stored =
+      match%bind guarded (fun () -> Store.complete t.store scope stored) with
+      | Ok () -> return ()
+      | Error e ->
+        t.on_store_error e;
+        release t scope >>| report t
+    in
     match t.on_handler_exn with
     | Release -> release t scope >>| report t
-    | Record stored ->
-      (match%bind guarded (fun () -> Store.complete t.store scope stored) with
-       | Ok () -> return ()
+    | Record stored -> record stored
+    | Record_exn f ->
+      (* A response function that raises must not leave the key in progress either: its
+         error goes to [on_store_error] and the key is released. *)
+      (match Or_error.try_with (fun () -> f exn) with
+       | Ok stored -> record stored
        | Error e ->
-         t.on_store_error e;
+         t.on_store_error (Error.tag e ~tag:"on_handler_exn");
          release t scope >>| report t)
   ;;
 
@@ -354,7 +365,7 @@ module Make (Store : Store) = struct
     | Ok `Claimed ->
       (match%bind Monitor.try_with ~extract_exn:true (fun () -> handler req) with
        | Error exn ->
-         let%bind () = after_exn t scope in
+         let%bind () = after_exn t scope exn in
          raise exn
        | Ok (resp : Response.t) ->
          let status = Response.status_code resp in
