@@ -50,3 +50,7 @@ First release.
   accepts any non-empty UTF-8 key up to a byte length; passed as `~key_policy`.
 - `Idempotency.Replayed_header`: with `~replayed_header:Always`, every response to an
   unsafe request carries `Idempotent-Replayed`, `false` unless it is a replay.
+- `Response.render_problem`, and a `~render_problem` hook on `Idempotency.Make.create`
+  and `Router.create`: the kit's own refusals (400, 409 and 503 from idempotency, 404
+  and 405 from the router) can use a service's error body; problem headers such as
+  `Allow` and `Retry-After` are kept.
