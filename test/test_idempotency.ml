@@ -254,3 +254,71 @@ let%expect_test "refusals that a retry may fix are not stored" =
     |}];
   return ()
 ;;
+
+let%expect_test "key policies" =
+  let strict = Idempotency.Key_policy.strict in
+  let permissive = Idempotency.Key_policy.permissive ~max_bytes:9 () in
+  List.iter
+    [ "uuid-like", "abc-123"
+    ; "space", "has space"
+    ; "cyrillic", "ключ"
+    ; "empty", ""
+    ; "not utf-8", "\xff\xfe"
+    ; "10 bytes", String.make 10 'x'
+    ]
+    ~f:(fun (label, key) ->
+      printf
+        "%-10s strict=%b permissive=%b\n"
+        label
+        (Idempotency.Key_policy.accepts strict key)
+        (Idempotency.Key_policy.accepts permissive key));
+  [%expect
+    {|
+    uuid-like  strict=true permissive=true
+    space      strict=false permissive=true
+    cyrillic   strict=false permissive=true
+    empty      strict=false permissive=false
+    not utf-8  strict=false permissive=false
+    10 bytes   strict=true permissive=false
+    |}];
+  return ()
+;;
+
+let%expect_test "a permissive policy in the middleware" =
+  let manual = Clock.Manual.create ~start:t0 in
+  let store = Idempotency.Memory_store.create () in
+  let idem =
+    Idem.create
+      ~key_policy:(Idempotency.Key_policy.permissive ())
+      ~store
+      ~clock:(Clock.Manual.clock manual)
+      ()
+  in
+  let app = Idem.middleware idem (fun _ -> return (Response.text "ok")) in
+  let call key =
+    let%map r =
+      app (Request.create `POST "/t" ~headers:[ "idempotency-key", key ] ~body:"{}")
+    in
+    printf "%d %s\n" (Response.status_code r) r.body
+  in
+  let%bind () = call "оплата за март" in
+  let%bind () = call "оплата за март" in
+  let%bind () = call (String.make 256 'a') in
+  [%expect
+    {|
+    200 ok
+    200 ok
+    400 {"type":"about:blank","title":"Bad Request","status":400,"code":"invalid_idempotency_key"}
+    |}];
+  return ()
+;;
+
+let%test_unit "the strict policy accepts a subset of the permissive one" =
+  let permissive = Idempotency.Key_policy.permissive () in
+  Quickcheck.test
+    (String.gen_with_length 4 Char.quickcheck_generator)
+    ~sexp_of:String.sexp_of_t
+    ~f:(fun key ->
+      if Idempotency.Key_policy.accepts Idempotency.Key_policy.strict key
+      then assert (Idempotency.Key_policy.accepts permissive key))
+;;
