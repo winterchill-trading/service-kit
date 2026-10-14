@@ -21,9 +21,9 @@
     prints
 
     {v
-# HELP logins_total Sign-ins
-# TYPE logins_total counter
-logins_total{result="ok"} 1
+    # HELP logins_total Sign-ins
+    # TYPE logins_total counter
+    logins_total{result="ok"} 1
     v} *)
 
 open! Core

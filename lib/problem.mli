@@ -15,8 +15,8 @@
     renders as
 
     {v
-{"type":"about:blank","title":"Conflict","status":409,"code":"insufficient_funds",
- "params":{"available":"12.50","currency":"EUR"}}
+    {"type":"about:blank","title":"Conflict","status":409,"code":"insufficient_funds",
+     "params":{"available":"12.50","currency":"EUR"}}
     v} *)
 
 open! Core

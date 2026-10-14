@@ -7,7 +7,7 @@
     restarting anything. A failing non-critical check reports ["degraded"] with 200.
 
     {v
-{"status":"unavailable","checks":{"database":"ok","ledger":"failed","rates":"timeout"}}
+    {"status":"unavailable","checks":{"database":"ok","ledger":"failed","rates":"timeout"}}
     v}
 
     Failure details are left out of responses unless [verbose] is set: they can name hosts

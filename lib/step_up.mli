@@ -3,8 +3,8 @@
 
     A grant is bound to one session and one purpose, expires after [ttl] (5 minutes by
     default) and can be consumed once. Moving money or revealing a card number would
-    {!consume} a grant; read-only checks such as "show the confirm button" would only
-    {!check} it.
+    {!Make.consume} a grant; read-only checks such as "show the confirm button" would only
+    {!Make.check} it.
 
     Purposes are the application's own variant:
 
