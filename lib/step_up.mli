@@ -125,6 +125,19 @@ module Make (Purpose : Purpose) (Spent : Spent) : sig
     -> session_id:string
     -> purpose:Purpose.t
     -> (Grant.t, Error.t) Result.t Async.Deferred.t
+
+  (** The request header carrying a grant, ["x-step-up-grant"]. *)
+  val header_name : string
+
+  (** Route middleware that consumes the grant in {!header_name} for [purpose] in the
+      session [session_id] names (typically from {!Session.claims}). Without a session, a
+      grant, or with any grant error, answers 403 [step_up_required] with the purpose as
+      the [purpose] param, so the client knows which step-up to start. *)
+  val require
+    :  t
+    -> purpose:Purpose.t
+    -> session_id:(Request.t -> string option)
+    -> Router.Middleware.t
 end
 
 (** The signed payload. Purposes are stored by their wire name. *)

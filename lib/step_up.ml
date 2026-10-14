@@ -181,4 +181,25 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
         | Ok `Already_used -> Error Error.Already_used
         | Error e -> Error (Error.Store_failed e))
   ;;
+
+  let header_name = "x-step-up-grant"
+
+  let require t ~purpose ~session_id : Router.Middleware.t =
+    fun handler req ->
+    let required () =
+      Async.return
+        (Response.problem
+           (Problem.forbidden
+              "step_up_required"
+              ~params:[ "purpose", String (Purpose.to_string purpose) ]))
+    in
+    match session_id req, Request.header req header_name with
+    | None, _ | _, None -> required ()
+    | Some session_id, Some token ->
+      Async.Deferred.bind (consume t token ~session_id ~purpose) ~f:(function
+        | Ok _ -> handler req
+        | Error (Store_failed _ as e) ->
+          Async.return (Response.problem (Error.to_problem e))
+        | Error _ -> required ())
+  ;;
 end
