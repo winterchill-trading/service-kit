@@ -26,12 +26,13 @@ module Stable = struct
   end
 end
 
+(* Alternate_sexp prints times in UTC whatever the machine's zone. *)
 type t = Stable.V1.t =
   | String of string
   | Int of int
   | Bool of bool
   | Decimal of string
-  | Time of Time_ns.t
+  | Time of Time_ns.Alternate_sexp.t
   | List of t list
 [@@deriving sexp, compare, equal]
 

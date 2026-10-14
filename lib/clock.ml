@@ -8,7 +8,7 @@ let of_time_source source () = Async.Time_source.now source
 let now t = t ()
 
 module Manual = struct
-  type t = { mutable now : Time_ns.t } [@@deriving sexp_of]
+  type t = { mutable now : Time_ns.Alternate_sexp.t } [@@deriving sexp_of]
 
   let create ~start = { now = start }
   let clock t () = t.now
