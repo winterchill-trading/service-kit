@@ -1,0 +1,17 @@
+(library
+ (name service_kit_test)
+ (libraries
+  service-kit
+  core
+  expect_test_helpers_core
+  async
+  cohttp
+  cohttp-async
+  http
+  uri
+  yojson)
+ (inline_tests
+  (flags
+   (:standard -source-tree-root .)))
+ (preprocess
+  (pps ppx_jane)))

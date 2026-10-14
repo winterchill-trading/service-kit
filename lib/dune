@@ -1,0 +1,6 @@
+(library
+ (name service_kit)
+ (public_name service-kit)
+ (libraries core async cohttp cohttp-async http uri yojson cryptokit)
+ (preprocess
+  (pps ppx_jane)))
