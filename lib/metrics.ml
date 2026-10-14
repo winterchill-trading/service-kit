@@ -237,6 +237,19 @@ module Requests = struct
     Counter.incr t.total [ route; meth; Int.to_string status ];
     Histogram.observe t.duration [ route; meth ] (Time_ns.Span.to_sec duration)
   ;;
+
+  let middleware t ~clock : Router.Middleware.t =
+    fun handler req ->
+    let started = Clock.now clock in
+    Async.Deferred.map (handler req) ~f:(fun resp ->
+      observe
+        t
+        ~route:req.route
+        ~meth:(Cohttp.Code.string_of_method req.meth)
+        ~status:(Response.status_code resp)
+        ~duration:(Time_ns.diff (Clock.now clock) started);
+      resp)
+  ;;
 end
 
 let sorted_series table =
@@ -285,4 +298,10 @@ let render t =
         line "%s_sum%s %s" m.name (label_set m.labels lv) (format_float s.sum);
         line "%s_count%s %d" m.name (label_set m.labels lv) s.count));
   Buffer.contents buf
+;;
+
+let route t =
+  Router.Route.get
+    Router.Path.(root / "metrics")
+    (fun _ -> Async.return (Response.text ~content_type (render t)))
 ;;

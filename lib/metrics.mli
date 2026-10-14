@@ -103,7 +103,13 @@ module Requests : sig
     -> status:int
     -> duration:Time_ns.Span.t
     -> unit
+
+  (** Observes every request that passes through, labelled with {!Request.route}. *)
+  val middleware : t -> clock:Clock.t -> Router.Middleware.t
 end
+
+(** [GET /metrics] serving {!render}. *)
+val route : t -> Router.Route.t
 
 (** The media type of {!render}'s output. *)
 val content_type : string
