@@ -137,3 +137,32 @@ let%test_unit "parameters come back from encoded paths" =
       then assert (Option.is_none parsed)
       else [%test_result: (string * int) option] parsed ~expect:(Some (s, n)))
 ;;
+
+let%expect_test "404 and 405 through a render hook" =
+  let render (req : Request.t) (p : Problem.t) =
+    Response.json
+      ~status:p.status
+      (`Assoc [ "error", `String p.code; "route", `String req.route ])
+  in
+  let router =
+    Router.create
+      ~render_problem:render
+      Router.[ Route.get Path.(root / "a") (fun _ -> return (Response.text "a")) ]
+  in
+  let show meth path =
+    let%map r = Router.handle router (Request.create meth path) in
+    print_s
+      [%sexp
+        (Response.status_code r : int)
+        , (r.body : string)
+        , (Response.header r "allow" : string option)]
+  in
+  let%bind () = show `GET "/nowhere" in
+  let%bind () = show `POST "/a" in
+  [%expect
+    {|
+    (404 "{\"error\":\"not_found\",\"route\":\"unmatched\"}" ())
+    (405 "{\"error\":\"method_not_allowed\",\"route\":\"/a\"}" (GET))
+    |}];
+  return ()
+;;
