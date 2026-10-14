@@ -56,4 +56,14 @@
     (< 4.0)))
   (cryptokit
    (>= 1.16))
+  (core_unix
+   (and
+    :with-test
+    (>= v0.17.0)
+    (< v0.19~)))
+  (expect_test_helpers_core
+   (and
+    :with-test
+    (>= v0.17.0)
+    (< v0.19~)))
   (odoc :with-doc)))
