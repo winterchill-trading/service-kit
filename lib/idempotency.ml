@@ -171,7 +171,12 @@ let request_digest (req : Request.t) =
        [ Cohttp.Code.string_of_method req.meth; Uri.path_and_query req.uri; body ])
 ;;
 
-let default_store_status status = status < 500 && status <> 409 && status <> 429
+(* 401 and 403 depend on credentials and step-up grants that a retry may fix; 409 and 429
+   describe momentary state. Replaying any of them would pin a transient refusal to the
+   key. *)
+let default_store_status status =
+  status < 500 && not (List.mem [ 401; 403; 409; 429 ] status ~equal:Int.equal)
+;;
 
 let default_caller req =
   match Request.header req "authorization" with

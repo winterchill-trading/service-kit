@@ -227,3 +227,30 @@ let%test_unit "digest does not depend on object key order" =
       in
       [%test_result: string] (d b) ~expect:(d a))
 ;;
+
+let%expect_test "refusals that a retry may fix are not stored" =
+  let manual = Clock.Manual.create ~start:t0 in
+  let store = Idempotency.Memory_store.create () in
+  let idem = Idem.create ~store ~clock:(Clock.Manual.clock manual) () in
+  let status = ref `Forbidden in
+  let app = Idem.middleware idem (fun _ -> return (Response.text ~status:!status "x")) in
+  let call () =
+    let%map r =
+      app (Request.create `POST "/t" ~headers:[ "idempotency-key", "k" ] ~body:"{}")
+    in
+    print_s
+      [%sexp
+        (Response.status_code r : int)
+        , (Response.header r "idempotent-replayed" : string option)]
+  in
+  let%bind () = call () in
+  status := `Created;
+  let%bind () = call () in
+  let%bind () = call () in
+  [%expect {|
+    (403 ())
+    (201 ())
+    (201 (true))
+    |}];
+  return ()
+;;

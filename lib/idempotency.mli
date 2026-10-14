@@ -119,10 +119,11 @@ module Make (Store : Store) : sig
 
   (** [retention] defaults to 24 hours and [stale_after] to 5 minutes. Responses whose
       status passes [store_status] are stored; others release the key so the client can
-      retry (default: everything below 500 except 409 and 429, which describe momentary
-      state). [caller] names who is asking (default: a SHA-256 of the [Authorization]
-      header, or ["anonymous"]); put the middleware after authentication and pass the
-      authenticated subject. With [required], unsafe requests without a key get 400
+      retry (default: everything below 500 except 401 and 403, which a retry with new
+      credentials may fix, and 409 and 429, which describe momentary state). [caller]
+      names who is asking (default: a SHA-256 of the [Authorization] header, or
+      ["anonymous"]); put the middleware after authentication and pass the authenticated
+      subject. With [required], unsafe requests without a key get 400
       [idempotency_key_missing]. [on_store_error] sees store failures (default: ignored);
       a failed claim answers 503 [idempotency_unavailable] without running the handler. *)
   val create
