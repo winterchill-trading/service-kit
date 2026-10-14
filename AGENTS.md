@@ -80,6 +80,9 @@ flags `Obj.magic` and `Obj.repr`. To check a run, use `gh run list --limit 1`, a
   `~name` and `~secure:false` together.
 - An idempotency layer must never store 401 or 403 answers, or a retry that carries a valid
   step-up grant replays the refusal.
+- `Step_up` in binding mode reports a grant bound to another request as `Already_used`;
+  `Error.t` gained no constructor, so existing matches stay exhaustive. `consume` in that
+  mode binds to a random one-off request, so it remains single use.
 - Record fields with one name in sibling types resolve to the last type defined. Annotate
   the binding.
 - Async expect tests go in their own file; mixing them with a pure test fails to type-check.
