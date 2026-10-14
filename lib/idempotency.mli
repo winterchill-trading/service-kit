@@ -182,6 +182,7 @@ module Make (Store : Store) : sig
     -> ?on_handler_exn:Failure.t
     -> ?key_policy:Key_policy.t
     -> ?replayed_header:Replayed_header.t
+    -> ?render_problem:(Request.t -> Problem.t -> Response.t)
     -> store:Store.t
     -> clock:Clock.t
     -> unit

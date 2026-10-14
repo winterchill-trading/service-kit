@@ -240,6 +240,7 @@ module Make (Store : Store) = struct
     ; on_handler_exn : Failure.t
     ; key_policy : Key_policy.t
     ; replayed_header : Replayed_header.t
+    ; render_problem : Request.t -> Problem.t -> Response.t
     ; store : Store.t
     ; clock : Kit_clock.t
     }
@@ -254,6 +255,7 @@ module Make (Store : Store) = struct
     ?(on_handler_exn = Failure.Release)
     ?(key_policy = Key_policy.strict)
     ?(replayed_header = Replayed_header.On_replay)
+    ?(render_problem = fun _ p -> Response.problem p)
     ~store
     ~clock
     ()
@@ -267,12 +269,13 @@ module Make (Store : Store) = struct
     ; on_handler_exn
     ; key_policy
     ; replayed_header
+    ; render_problem
     ; store
     ; clock
     }
   ;;
 
-  let problem p = return (Response.problem p)
+  let problem t req p = return (Response.render_problem ~render:t.render_problem req p)
 
   let replay (stored : Stored.t) =
     { Response.status = Cohttp.Code.status_of_code stored.status
@@ -333,15 +336,17 @@ module Make (Store : Store) = struct
     with
     | Error e ->
       t.on_store_error e;
-      problem (Problem.service_unavailable "idempotency_unavailable")
+      problem t req (Problem.service_unavailable "idempotency_unavailable")
     | Ok (`Exists existing) ->
       if not (String.equal existing.request_digest request_digest)
-      then problem (Problem.conflict "idempotency_key_reused")
+      then problem t req (Problem.conflict "idempotency_key_reused")
       else (
         match existing.state with
         | Completed stored -> return (replay stored)
         | In_progress ->
           problem
+            t
+            req
             (Problem.create
                `Conflict
                "idempotency_key_in_use"
@@ -380,10 +385,11 @@ module Make (Store : Store) = struct
 
   let guard t handler (req : Request.t) =
     match Request.header req header_name with
-    | None when t.required -> problem (Problem.bad_request "idempotency_key_missing")
+    | None when t.required ->
+      problem t req (Problem.bad_request "idempotency_key_missing")
     | None -> handler req
     | Some key when not (Key_policy.accepts t.key_policy key) ->
-      problem (Problem.bad_request "invalid_idempotency_key")
+      problem t req (Problem.bad_request "invalid_idempotency_key")
     | Some key -> run t handler req key
   ;;
 
