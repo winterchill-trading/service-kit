@@ -322,3 +322,37 @@ let%test_unit "the strict policy accepts a subset of the permissive one" =
       if Idempotency.Key_policy.accepts Idempotency.Key_policy.strict key
       then assert (Idempotency.Key_policy.accepts permissive key))
 ;;
+
+let%expect_test "Idempotent-Replayed on every response" =
+  let manual = Clock.Manual.create ~start:t0 in
+  let store = Idempotency.Memory_store.create () in
+  let idem =
+    Idem.create ~replayed_header:Always ~store ~clock:(Clock.Manual.clock manual) ()
+  in
+  let app = Idem.middleware idem (fun _ -> return (Response.text "ok")) in
+  let call ?(meth = `POST) ?key body =
+    let headers =
+      Option.value_map key ~default:[] ~f:(fun k -> [ "idempotency-key", k ])
+    in
+    let%map r = app (Request.create meth "/t" ~headers ~body) in
+    print_s
+      [%sexp
+        (Response.status_code r : int)
+        , (Response.header r "idempotent-replayed" : string option)]
+  in
+  let%bind () = call ~key:"k" "{}" in
+  (* A replay reads [true]: the stored copy did not keep the first run's [false]. *)
+  let%bind () = call ~key:"k" "{}" in
+  let%bind () = call ~key:"k" {|{"other":1}|} in
+  let%bind () = call "{}" in
+  let%bind () = call ~meth:`GET "" in
+  [%expect
+    {|
+    (200 (false))
+    (200 (true))
+    (409 (false))
+    (200 (false))
+    (200 ())
+    |}];
+  return ()
+;;
