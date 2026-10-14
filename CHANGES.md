@@ -54,3 +54,8 @@ First release.
   and `Router.create`: the kit's own refusals (400, 409 and 503 from idempotency, 404
   and 405 from the router) can use a service's error body; problem headers such as
   `Allow` and `Retry-After` are kept.
+- `Session.Server_side`, `Session.Cookie`, `Session.Store` and `Session.Memory_store`:
+  opaque server-side session tokens carried in a cookie (configurable name, `Secure`,
+  `HttpOnly`, `SameSite`, path and domain, with the `__Host-` and `__Secure-` prefix
+  rules checked), stored by SHA-256, with rotation, revocation, "log out everywhere",
+  purge and a middleware that can also accept the token as a bearer token.
