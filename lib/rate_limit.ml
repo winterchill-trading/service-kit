@@ -83,3 +83,17 @@ let check ?cost t ~key ~now =
      then Hashtbl.filter_inplace t.buckets ~f:(fun b -> Time_ns.( > ) b now));
   decision
 ;;
+
+let middleware
+  ?(key = fun (r : Request.t) -> Option.value r.remote ~default:"unknown")
+  ?(cost = fun _ -> 1)
+  t
+  ~clock
+  : Router.Middleware.t
+  =
+  fun handler req ->
+  match check t ~cost:(cost req) ~key:(key req) ~now:(Clock.now clock) with
+  | Allowed _ -> handler req
+  | Denied { retry_after } ->
+    Async.return (Response.problem (Problem.too_many_requests ~retry_after))
+;;

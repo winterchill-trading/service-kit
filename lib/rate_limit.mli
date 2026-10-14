@@ -67,3 +67,14 @@ val tracked : t -> int
 
 (** The configuration [t] was created with. *)
 val config : t -> Config.t
+
+(** Refuses requests over the limit with 429 [rate_limited] and [Retry-After]. [key] picks
+    the bucket (default: the peer address, or ["unknown"]); [cost] the tokens a request
+    takes (default 1). Use one limiter per policy, e.g. a strict one as route middleware
+    on sign-in and a loose one globally. *)
+val middleware
+  :  ?key:(Request.t -> string)
+  -> ?cost:(Request.t -> int)
+  -> t
+  -> clock:Clock.t
+  -> Router.Middleware.t
