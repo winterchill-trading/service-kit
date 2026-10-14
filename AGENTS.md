@@ -12,7 +12,7 @@ module is independent, keeps no state of its own and is tested without a databas
 | Path | Holds |
 | --- | --- |
 | `lib/` | The `service-kit` library (module `Service_kit`): one module per concern, each with an `.mli` |
-| `test/` | Inline expect tests and Quickcheck properties per module (`test_session_cookie.ml` for server-side sessions, `test_idempotency_failures.ml` for raising handlers and failing stores), `gens.ml` (shared generators) |
+| `test/` | Inline expect tests and Quickcheck properties per module (`test_session_cookie.ml` for server-side sessions, `test_idempotency_failures.ml` for raising handlers and failing stores, `test_step_up_timed.ml` for binding stores given the clock's time), `gens.ml` (shared generators) |
 | `examples/` | `quick_start.ml` (smallest service), `transfers.ml` (a fuller JSON API), `transfers_service.ml` (its server), `test_transfers.ml` (end-to-end test) |
 | `docs/` | `api-notes.md`: the standards and libraries behind the modules |
 | `.github/` | `workflows/ci.yml` |
@@ -83,6 +83,10 @@ flags `Obj.magic` and `Obj.repr`. To check a run, use `gh run list --limit 1`, a
 - `Step_up` in binding mode reports a grant bound to another request as `Already_used`;
   `Error.t` gained no constructor, so existing matches stay exhaustive. `consume` in that
   mode binds to a random one-off request, so it remains single use.
+- `Idempotency.Failure` and `Step_up.Mode` grew by adding cases (`Record_exn`,
+  `bind_on_first_use_timed`) next to the old ones. Keep extending that way: existing
+  module types (`Step_up.Bindings`, `Idempotency.Store`) are implemented by services, so
+  a new argument goes in a new module type, never into the old one.
 - Record fields with one name in sibling types resolve to the last type defined. Annotate
   the binding.
 - Async expect tests go in their own file; mixing them with a pure test fails to type-check.
