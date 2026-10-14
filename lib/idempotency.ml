@@ -140,6 +140,12 @@ module Memory_store = struct
   ;;
 end
 
+module Failure = struct
+  type t =
+    | Release
+    | Record of Stored.t
+end
+
 let header_name = "idempotency-key"
 
 let valid_key k =
@@ -198,6 +204,7 @@ module Make (Store : Store) = struct
     ; caller : Request.t -> string
     ; required : bool
     ; on_store_error : Error.t -> unit
+    ; on_handler_exn : Failure.t
     ; store : Store.t
     ; clock : Kit_clock.t
     }
@@ -209,6 +216,7 @@ module Make (Store : Store) = struct
     ?(caller = default_caller)
     ?(required = false)
     ?(on_store_error = ignore)
+    ?(on_handler_exn = Failure.Release)
     ~store
     ~clock
     ()
@@ -219,6 +227,7 @@ module Make (Store : Store) = struct
     ; caller
     ; required
     ; on_store_error
+    ; on_handler_exn
     ; store
     ; clock
     }
@@ -238,6 +247,30 @@ module Make (Store : Store) = struct
     | Error e -> t.on_store_error e
   ;;
 
+  (* A store that raises is treated like one that answers [Error], so a failing store
+     cannot skip the release below and leave the key in progress. *)
+  let guarded f =
+    match%map Monitor.try_with_or_error ~extract_exn:true f with
+    | Ok r -> r
+    | Error _ as e -> e
+  ;;
+
+  let release t scope = guarded (fun () -> Store.release t.store scope)
+
+  (* After a handler raised: either free the key or complete it with the configured
+     answer. If completing fails, releasing is the fallback; if that fails too, the record
+     is taken over once [stale_after] has passed. *)
+  let after_exn t scope =
+    match t.on_handler_exn with
+    | Release -> release t scope >>| report t
+    | Record stored ->
+      (match%bind guarded (fun () -> Store.complete t.store scope stored) with
+       | Ok () -> return ()
+       | Error e ->
+         t.on_store_error e;
+         release t scope >>| report t)
+  ;;
+
   let run t handler (req : Request.t) key =
     let now = Kit_clock.now t.clock in
     let scope =
@@ -252,11 +285,12 @@ module Make (Store : Store) = struct
       { Record.scope; request_digest; created_at = now; state = In_progress }
     in
     match%bind
-      Store.claim
-        t.store
-        record
-        ~reclaim_before:(Time_ns.sub now t.retention)
-        ~stale_before:(Time_ns.sub now t.stale_after)
+      guarded (fun () ->
+        Store.claim
+          t.store
+          record
+          ~reclaim_before:(Time_ns.sub now t.retention)
+          ~stale_before:(Time_ns.sub now t.stale_after))
     with
     | Error e ->
       t.on_store_error e;
@@ -276,19 +310,19 @@ module Make (Store : Store) = struct
     | Ok `Claimed ->
       (match%bind Monitor.try_with ~extract_exn:true (fun () -> handler req) with
        | Error exn ->
-         let%bind result = Store.release t.store scope in
-         report t result;
+         let%bind () = after_exn t scope in
          raise exn
        | Ok (resp : Response.t) ->
          let status = Response.status_code resp in
          let%map result =
            if t.store_status status
            then
-             Store.complete
-               t.store
-               scope
-               { Stored.status; headers = resp.headers; body = resp.body }
-           else Store.release t.store scope
+             guarded (fun () ->
+               Store.complete
+                 t.store
+                 scope
+                 { Stored.status; headers = resp.headers; body = resp.body })
+           else release t scope
          in
          report t result;
          resp)

@@ -21,10 +21,14 @@
     service with several instances implements {!Store} over its database: [claim] must be
     atomic (an insert that fails on an existing key, e.g. [INSERT ... ON CONFLICT]).
 
-    If storing the finished response fails, the record stays in progress: retries are
-    refused until [stale_after] has passed, then the request runs again. Handlers that
-    move money should also pass the key on to their providers so a second run finds the
-    first one's result. *)
+    If the handler raises, the key never stays in progress: by default the record is
+    removed so a retry runs again; with [~on_handler_exn:(Record stored)] it is completed
+    with [stored] (say a 500 problem) so retries replay that answer instead of running a
+    handler that may have done part of its work. A store that raises counts as one that
+    answers [Error]. If storing the finished response fails, the record stays in progress:
+    retries are refused until [stale_after] has passed, then the request runs again.
+    Handlers that move money should also pass the key on to their providers so a second
+    run finds the first one's result. *)
 
 open! Core
 
@@ -103,6 +107,15 @@ module Memory_store : sig
   val length : t -> int
 end
 
+(** What happens to a key whose handler raised. *)
+module Failure : sig
+  type t =
+    | Release (** remove the record, so a retry with the key runs the handler again *)
+    | Record of Stored.t
+    (** complete the record with this response, so retries replay it; if that write fails,
+        the record is removed instead *)
+end
+
 (** The request header, ["idempotency-key"]. *)
 val header_name : string
 
@@ -125,7 +138,9 @@ module Make (Store : Store) : sig
       ["anonymous"]); put the middleware after authentication and pass the authenticated
       subject. With [required], unsafe requests without a key get 400
       [idempotency_key_missing]. [on_store_error] sees store failures (default: ignored);
-      a failed claim answers 503 [idempotency_unavailable] without running the handler. *)
+      a failed claim answers 503 [idempotency_unavailable] without running the handler.
+      [on_handler_exn] (default {!Failure.Release}) says what happens to the key when the
+      handler raises; the exception is raised again either way. *)
   val create
     :  ?retention:Time_ns.Span.t
     -> ?stale_after:Time_ns.Span.t
@@ -133,6 +148,7 @@ module Make (Store : Store) : sig
     -> ?caller:(Request.t -> string)
     -> ?required:bool
     -> ?on_store_error:(Error.t -> unit)
+    -> ?on_handler_exn:Failure.t
     -> store:Store.t
     -> clock:Clock.t
     -> unit
