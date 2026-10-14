@@ -5,3 +5,41 @@ All notable changes to this project are documented here. The format follows
 [Semantic Versioning](https://semver.org/).
 
 ## Unreleased
+
+First release.
+
+### Added
+
+- `Router`: typed paths with literal and parameter segments, method dispatch with 404
+  and 405 (`Allow`), global and per-route middleware; global middleware sees the route
+  pattern in `Request.route`.
+- `Request` and `Response`: decoded path segments, JSON bodies with problem errors, a
+  context map for middleware, JSON/text/problem responses.
+- `Server`: cohttp-async adapter with a body limit (413), exceptions answered 500 and
+  reported to `on_exn`, and the peer address on the request.
+- `Problem`: RFC 9457 problem documents with validated codes and typed params; helpers
+  for common statuses including 429 with `Retry-After`.
+- `Message` and `Message.Catalogue`: structured messages, catalogues with parameter
+  kinds and per-locale templates, validation, coverage checks and rendering.
+- `Param`: typed values (string, int, bool, decimal, time, list) with JSON and stable
+  bin_prot encodings.
+- `Idempotency`: `Idempotency-Key` middleware with stored-response replay, 409 on reuse
+  with a different request or while in progress, retention, stale-record takeover and a
+  `Store` module type with `Memory_store`.
+- `Session`: HMAC-SHA256 tokens with a keyring for key rotation, token rotation up to a
+  maximum lifetime, a revocation hook and a middleware exposing the claims.
+- `Step_up`: single-purpose, session-bound grants with a 5-minute default lifetime,
+  `check`, single-use `consume` through a `Spent` store, and `require` middleware.
+- `Rate_limit`: token buckets (GCRA) with integer arithmetic, bounded key tables and a
+  429 middleware.
+- `Request_log`: per-request entries with request ids, handler fields, header and query
+  redaction, JSON and sexp output.
+- `Health`: `/healthz` and `/readyz` with concurrent checks, timeouts, non-critical
+  checks and draining.
+- `Metrics`: Prometheus counters, gauges, computed gauges and histograms, per-route
+  request metrics middleware and a `/metrics` route.
+- `Cors`: origin allow lists, preflight handling and exposed headers.
+- `Pagination`: versioned, optionally signed cursors over any bin_prot position,
+  `limit` parsing and pages from an over-fetch.
+- `Clock`: injectable time with a manual clock.
+- Examples: `quick_start` and a transfers service with end-to-end expect tests.
