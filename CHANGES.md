@@ -59,3 +59,9 @@ First release.
   `HttpOnly`, `SameSite`, path and domain, with the `__Host-` and `__Secure-` prefix
   rules checked), stored by SHA-256, with rotation, revocation, "log out everywhere",
   purge and a middleware that can also accept the token as a bearer token.
+- `Step_up.Mode.bind_on_first_use`, `Step_up.Binding`, `Step_up.Bindings` and
+  `Step_up.Memory_bindings`: a grant can be bound to the first request that uses it
+  (operation and idempotency key) and accepted again for retries of that request only,
+  so a timed-out payment can be retried with the same grant. `Make.use` takes the
+  binding; `Make.create ~mode` and `Make.require ~operation` select and name it. The
+  default stays single use.
