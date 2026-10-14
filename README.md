@@ -13,7 +13,7 @@ cohttp-async.
 | `Param` | The typed values problems and messages carry (string, int, bool, decimal, time, list) |
 | `Idempotency` | `Idempotency-Key` per caller, method and route; stored-response replay; 409 on reuse with another body; retention; pluggable store |
 | `Session` | Opaque HMAC-SHA256 tokens, key rotation through a keyring, token rotation up to a maximum lifetime, revocation hook; or server-side sessions in an `HttpOnly` cookie over a pluggable store |
-| `Step_up` | Single-purpose, time-bound, session-bound grants; issue, check, consume once; purposes are the application's variant |
+| `Step_up` | Single-purpose, time-bound, session-bound grants; issue, check, consume once (or bind to the first request and accept its retries); purposes are the application's variant |
 | `Rate_limit` | Token buckets per key, exact integer arithmetic, time passed in; middleware answering 429 with `Retry-After` |
 | `Request_log` | One structured entry per request, request id propagation (`X-Request-Id`), header and query redaction |
 | `Health` | `/healthz` and `/readyz` with concurrent dependency checks, timeouts and draining |
@@ -182,6 +182,23 @@ let grant, _ = Grants.issue grants ~session_id:claims.session_id ~purpose:Send_p
 Grants.require grants ~purpose:Send_payment ~session_id:(fun req ->
   Option.map (Session.claims req) ~f:(fun c -> c.session_id))
 ```
+
+A consumed grant cannot be presented twice, so a payment request whose response was lost
+cannot be retried with it. In binding mode a grant is tied to the first request that
+uses it (the operation, by default method and route pattern, and its `Idempotency-Key`)
+and accepted again only for retries of that same request until it expires:
+
+```ocaml
+let grants =
+  Grants.create
+    ~mode:(Step_up.Mode.bind_on_first_use (module Step_up.Memory_bindings)
+             (Step_up.Memory_bindings.create ~clock ()))
+    ~key ~spent ~clock ()
+```
+
+`Grants.require` then reads the `Idempotency-Key` header; requests without one can use a
+grant only once. Implement `Step_up.Bindings` (one atomic `bind`) over a shared store for
+several instances.
 
 Tokens are `v1.<key id>.<claims>.<mac>`; grants are `su1.<claims>.<mac>`. Both are
 signed, not encrypted: they carry ids and times, never personal data.
