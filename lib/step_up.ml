@@ -38,6 +38,59 @@ module Memory_spent = struct
   let length t = Hashtbl.length t.until
 end
 
+module Binding = struct
+  type t =
+    { operation : string
+    ; idempotency_key : string
+    }
+  [@@deriving sexp, compare, equal]
+end
+
+module type Bindings = sig
+  type t
+
+  val bind
+    :  t
+    -> grant_id:string
+    -> binding:Binding.t
+    -> until:Time_ns.t
+    -> [ `Bound | `Same_request | `Other_request of Binding.t ] Or_error.t
+         Async.Deferred.t
+end
+
+module Memory_bindings = struct
+  type t =
+    { clock : Clock.t
+    ; bound : (Binding.t * Time_ns.t) String.Table.t
+    }
+
+  let create ~clock () = { clock; bound = String.Table.create () }
+
+  let bind t ~grant_id ~binding ~until =
+    let now = Clock.now t.clock in
+    Hashtbl.filter_inplace t.bound ~f:(fun (_, u) -> Time_ns.( > ) u now);
+    match Hashtbl.find t.bound grant_id with
+    | Some (existing, _) ->
+      if Binding.equal existing binding
+      then Async.return (Ok `Same_request)
+      else Async.return (Ok (`Other_request existing))
+    | None ->
+      Hashtbl.set t.bound ~key:grant_id ~data:(binding, until);
+      Async.return (Ok `Bound)
+  ;;
+
+  let length t = Hashtbl.length t.bound
+end
+
+module Mode = struct
+  type t =
+    | Consume_once
+    | Bind_on_first_use : (module Bindings with type t = 'a) * 'a -> t
+
+  let consume_once = Consume_once
+  let bind_on_first_use m store = Bind_on_first_use (m, store)
+end
+
 module Error = struct
   type t =
     | Malformed
@@ -84,7 +137,8 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
   end
 
   type t =
-    { ttl : Time_ns.Span.t
+    { mode : Mode.t
+    ; ttl : Time_ns.Span.t
     ; random : int -> string
     ; key : string
     ; spent : Spent.t
@@ -92,6 +146,7 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
     }
 
   let create
+    ?(mode = Mode.consume_once)
     ?(ttl = Time_ns.Span.of_min 5.)
     ?(random = Codec.random_bytes)
     ~key
@@ -101,7 +156,7 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
     =
     if String.length key < 32
     then raise_s [%message "Step_up.create: key shorter than 32 bytes"];
-    { ttl; random; key; spent; clock }
+    { mode; ttl; random; key; spent; clock }
   ;;
 
   let prefix = "su1"
@@ -170,21 +225,66 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
     | _ -> Error Malformed
   ;;
 
-  let consume t token ~session_id ~purpose =
+  let consume_once t (grant : Grant.t) =
+    Async.Deferred.map
+      (Spent.mark t.spent ~grant_id:grant.grant_id ~until:grant.expires_at)
+      ~f:(function
+      | Ok `First_use -> Ok grant
+      | Ok `Already_used -> Error Error.Already_used
+      | Error e -> Error (Error.Store_failed e))
+  ;;
+
+  let bind
+    (type a)
+    (module B : Bindings with type t = a)
+    (store : a)
+    (grant : Grant.t)
+    binding
+    =
+    Async.Deferred.map
+      (B.bind store ~grant_id:grant.grant_id ~binding ~until:grant.expires_at)
+      ~f:(function
+      | Ok (`Bound | `Same_request) -> Ok grant
+      | Ok (`Other_request _) -> Error Error.Already_used
+      | Error e -> Error (Error.Store_failed e))
+  ;;
+
+  (* A binding no later request can repeat, for uses that do not allow retries. *)
+  let unrepeatable t =
+    { Binding.operation = ""; idempotency_key = "once:" ^ Codec.hex (t.random 16) }
+  ;;
+
+  let use_with t token ~session_id ~purpose ~binding =
     match check t token ~session_id ~purpose with
     | Error _ as e -> Async.return e
     | Ok grant ->
-      Async.Deferred.map
-        (Spent.mark t.spent ~grant_id:grant.grant_id ~until:grant.expires_at)
-        ~f:(function
-        | Ok `First_use -> Ok grant
-        | Ok `Already_used -> Error Error.Already_used
-        | Error e -> Error (Error.Store_failed e))
+      (match t.mode with
+       | Consume_once -> consume_once t grant
+       | Bind_on_first_use (m, store) ->
+         bind
+           m
+           store
+           grant
+           (Option.value_or_thunk binding ~default:(fun () -> unrepeatable t)))
+  ;;
+
+  let consume t token ~session_id ~purpose =
+    use_with t token ~session_id ~purpose ~binding:None
+  ;;
+
+  let use t token ~session_id ~purpose ~binding =
+    use_with t token ~session_id ~purpose ~binding:(Some binding)
+  ;;
+
+  let default_operation (req : Request.t) =
+    Cohttp.Code.string_of_method req.meth ^ " " ^ req.route
   ;;
 
   let header_name = "x-step-up-grant"
 
-  let require t ~purpose ~session_id : Router.Middleware.t =
+  let require ?(operation = default_operation) t ~purpose ~session_id
+    : Router.Middleware.t
+    =
     fun handler req ->
     let required () =
       Async.return
@@ -196,7 +296,11 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
     match session_id req, Request.header req header_name with
     | None, _ | _, None -> required ()
     | Some session_id, Some token ->
-      Async.Deferred.bind (consume t token ~session_id ~purpose) ~f:(function
+      let binding =
+        Option.map (Request.header req Idempotency.header_name) ~f:(fun idempotency_key ->
+          { Binding.operation = operation req; idempotency_key })
+      in
+      Async.Deferred.bind (use_with t token ~session_id ~purpose ~binding) ~f:(function
         | Ok _ -> handler req
         | Error (Store_failed _ as e) ->
           Async.return (Response.problem (Error.to_problem e))

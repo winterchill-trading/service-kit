@@ -25,7 +25,15 @@
 
     Grants are signed tokens, so checking needs no storage; consuming records the grant id
     in a {!Spent} store until the grant expires, which is the only state. Services running
-    several instances give them a shared store. *)
+    several instances give them a shared store.
+
+    {b Retries.} A consumed grant cannot be presented again, so a client whose payment
+    request timed out cannot safely retry it with the same grant. In
+    {!Mode.bind_on_first_use} mode a grant is instead bound to the first request that uses
+    it, identified by an operation name and the request's idempotency key ({!Binding.t});
+    the same grant is accepted again only for retries of that request (same operation,
+    same key) until it expires, and refused for anything else. Pair it with
+    {!Idempotency}, which makes those retries return the original response. *)
 
 open! Core
 
@@ -65,6 +73,59 @@ module Memory_spent : sig
   val length : t -> int
 end
 
+(** The request a grant is bound to in {!Mode.bind_on_first_use} mode. *)
+module Binding : sig
+  type t =
+    { operation : string
+    (** what the request does; {!Make.require} uses the method and route pattern, such as
+        ["POST /payments"] *)
+    ; idempotency_key : string (** the client's key for this request *)
+    }
+  [@@deriving sexp, compare, equal]
+end
+
+(** Where grant bindings are remembered until the grant would have expired anyway. *)
+module type Bindings = sig
+  type t
+
+  (** Binds [grant_id] to [binding] if it is unbound ([`Bound]); otherwise reports whether
+      the existing binding is the same request ([`Same_request]) or another one
+      ([`Other_request], with the existing binding). Must be atomic across every instance
+      sharing the store. *)
+  val bind
+    :  t
+    -> grant_id:string
+    -> binding:Binding.t
+    -> until:Time_ns.t
+    -> [ `Bound | `Same_request | `Other_request of Binding.t ] Or_error.t
+         Async.Deferred.t
+end
+
+(** An in-process {!Bindings} store for one instance and for tests. *)
+module Memory_bindings : sig
+  include Bindings
+
+  (** An empty store. Entries are dropped once [until] has passed, checked against [clock]
+      on each [bind]. *)
+  val create : clock:Clock.t -> unit -> t
+
+  (** Entries currently remembered. *)
+  val length : t -> int
+end
+
+(** How a grant may be used. *)
+module Mode : sig
+  type t
+
+  (** A grant is used once; the second use fails with [Already_used]. The default. *)
+  val consume_once : t
+
+  (** A grant is bound to the first request that uses it and accepted again only for
+      retries of that request; any other request gets [Already_used]. Bindings live in
+      [store]; the {!Spent} store is not consulted in this mode. *)
+  val bind_on_first_use : (module Bindings with type t = 'a) -> 'a -> t
+end
+
 (** Why a grant was refused. *)
 module Error : sig
   type t =
@@ -99,9 +160,10 @@ module Make (Purpose : Purpose) (Spent : Spent) : sig
   type t
 
   (** [key] signs grants and must be at least 32 bytes (raises otherwise); use a different
-      key from the session keyring. *)
+      key from the session keyring. [mode] defaults to {!Mode.consume_once}. *)
   val create
-    :  ?ttl:Time_ns.Span.t
+    :  ?mode:Mode.t
+    -> ?ttl:Time_ns.Span.t
     -> ?random:(int -> string)
     -> key:string
     -> spent:Spent.t
@@ -122,12 +184,26 @@ module Make (Purpose : Purpose) (Spent : Spent) : sig
     -> (Grant.t, Error.t) Result.t
 
   (** {!check}, then marks the grant used; a second consume of the same token fails with
-      [Already_used]. *)
+      [Already_used]. In {!Mode.bind_on_first_use} mode the grant is bound to a fresh
+      request nobody can repeat, so it is used once just the same; use {!use} to allow
+      retries. *)
   val consume
     :  t
     -> string
     -> session_id:string
     -> purpose:Purpose.t
+    -> (Grant.t, Error.t) Result.t Async.Deferred.t
+
+  (** {!check}, then uses the grant for the request [binding]. In
+      {!Mode.bind_on_first_use} mode the first use binds the grant to [binding], later
+      uses with an equal binding succeed and any other binding fails with [Already_used].
+      In {!Mode.consume_once} mode this is {!consume} and [binding] is ignored. *)
+  val use
+    :  t
+    -> string
+    -> session_id:string
+    -> purpose:Purpose.t
+    -> binding:Binding.t
     -> (Grant.t, Error.t) Result.t Async.Deferred.t
 
   (** The request header carrying a grant, ["x-step-up-grant"]. *)
@@ -136,9 +212,15 @@ module Make (Purpose : Purpose) (Spent : Spent) : sig
   (** Route middleware that consumes the grant in {!header_name} for [purpose] in the
       session [session_id] names (typically from {!Session.claims}). Without a session, a
       grant, or with any grant error, answers 403 [step_up_required] with the purpose as
-      the [purpose] param, so the client knows which step-up to start. *)
+      the [purpose] param, so the client knows which step-up to start.
+
+      In {!Mode.bind_on_first_use} mode the grant is used through {!use} with the
+      request's [operation] (default: method and route pattern, such as
+      ["POST /payments"]) and its {!Idempotency.header_name} header; a request without
+      that header can only use the grant once. *)
   val require
-    :  t
+    :  ?operation:(Request.t -> string)
+    -> t
     -> purpose:Purpose.t
     -> session_id:(Request.t -> string option)
     -> Router.Middleware.t
