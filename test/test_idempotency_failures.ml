@@ -137,3 +137,43 @@ let%expect_test "Record falls back to releasing when completing fails" =
     |}];
   return ()
 ;;
+
+let%expect_test "Record_exn stores an answer computed from the exception" =
+  let answer exn =
+    { failure with
+      body = sprintf {|{"code":"internal_error","detail":%S}|} (Exn.to_string exn)
+    }
+  in
+  let _, errors, runs, app = setup ~on_handler_exn:(Record_exn answer) () in
+  let%bind () = call app in
+  let%bind () = call app in
+  print_s [%sexp (!runs : int), (!errors : string list)];
+  [%expect
+    {|
+    (raised (exn (Failure "handler bug")))
+    ((status 500)
+     (body
+      "{\"code\":\"internal_error\",\"detail\":\"(Failure \\\"handler bug\\\")\"}")
+     (replayed (true)))
+    (1 ())
+    |}];
+  return ()
+;;
+
+let%expect_test "Record_exn releases the key when the answer function raises" =
+  let store, errors, runs, app =
+    setup ~on_handler_exn:(Record_exn (fun _ -> failwith "no answer")) ()
+  in
+  let%bind () = call app in
+  print_s [%sexp (Idempotency.Memory_store.length store.inner : int)];
+  let%bind () = call app in
+  print_s [%sexp (!runs : int), (!errors : string list)];
+  [%expect
+    {|
+    (raised (exn (Failure "handler bug")))
+    0
+    ((status 200) (body done) (replayed ()))
+    (2 ("(on_handler_exn (Failure \"no answer\"))"))
+    |}];
+  return ()
+;;
