@@ -12,7 +12,7 @@ module is independent, keeps no state of its own and is tested without a databas
 | Path | Holds |
 | --- | --- |
 | `lib/` | The `service-kit` library (module `Service_kit`): one module per concern, each with an `.mli` |
-| `test/` | Inline expect tests and Quickcheck properties per module, `gens.ml` (shared generators) |
+| `test/` | Inline expect tests and Quickcheck properties per module (`test_session_cookie.ml` for server-side sessions, `test_idempotency_failures.ml` for raising handlers and failing stores), `gens.ml` (shared generators) |
 | `examples/` | `quick_start.ml` (smallest service), `transfers.ml` (a fuller JSON API), `transfers_service.ml` (its server), `test_transfers.ml` (end-to-end test) |
 | `docs/` | `api-notes.md`: the standards and libraries behind the modules |
 | `.github/` | `workflows/ci.yml` |
@@ -73,6 +73,11 @@ flags `Obj.magic` and `Obj.repr`. To check a run, use `gh run list --limit 1`, a
   in a local module.
 - `Time_ns.t` sexps print in the machine's zone, so expect output differs between a Mac and CI.
   Use `Time_ns.Alternate_sexp.t` in unstable types and keep `Stable.V1` for bin_io.
+- `Response.render_problem` adds the problem's own headers (`Allow`, `Retry-After`) to a
+  custom rendering. Hooks that render refusals should go through it.
+- `Session.Cookie.create` raises on settings browsers silently drop (`__Host-` without
+  `Secure`, `SameSite=None` without `Secure`). Tests that need a plain cookie pass
+  `~name` and `~secure:false` together.
 - An idempotency layer must never store 401 or 403 answers, or a retry that carries a valid
   step-up grant replays the refusal.
 - Record fields with one name in sibling types resolve to the last type defined. Annotate
