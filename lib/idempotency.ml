@@ -146,7 +146,15 @@ module Failure = struct
     | Record of Stored.t
 end
 
+module Replayed_header = struct
+  type t =
+    | On_replay
+    | Always
+  [@@deriving sexp, compare, equal]
+end
+
 let header_name = "idempotency-key"
+let replayed_header_name = "idempotent-replayed"
 
 let valid_key k =
   let n = String.length k in
@@ -231,6 +239,7 @@ module Make (Store : Store) = struct
     ; on_store_error : Error.t -> unit
     ; on_handler_exn : Failure.t
     ; key_policy : Key_policy.t
+    ; replayed_header : Replayed_header.t
     ; store : Store.t
     ; clock : Kit_clock.t
     }
@@ -244,6 +253,7 @@ module Make (Store : Store) = struct
     ?(on_store_error = ignore)
     ?(on_handler_exn = Failure.Release)
     ?(key_policy = Key_policy.strict)
+    ?(replayed_header = Replayed_header.On_replay)
     ~store
     ~clock
     ()
@@ -256,6 +266,7 @@ module Make (Store : Store) = struct
     ; on_store_error
     ; on_handler_exn
     ; key_policy
+    ; replayed_header
     ; store
     ; clock
     }
@@ -265,7 +276,7 @@ module Make (Store : Store) = struct
 
   let replay (stored : Stored.t) =
     { Response.status = Cohttp.Code.status_of_code stored.status
-    ; headers = stored.headers @ [ "idempotent-replayed", "true" ]
+    ; headers = stored.headers @ [ replayed_header_name, "true" ]
     ; body = stored.body
     }
   ;;
@@ -356,17 +367,29 @@ module Make (Store : Store) = struct
          resp)
   ;;
 
+  (* Every other response to an unsafe request says it was not replayed; a replay already
+     carries [true]. *)
+  let mark t (resp : Response.t) =
+    match t.replayed_header with
+    | On_replay -> resp
+    | Always ->
+      (match Response.header resp replayed_header_name with
+       | Some _ -> resp
+       | None -> Response.with_header resp replayed_header_name "false")
+  ;;
+
+  let guard t handler (req : Request.t) =
+    match Request.header req header_name with
+    | None when t.required -> problem (Problem.bad_request "idempotency_key_missing")
+    | None -> handler req
+    | Some key when not (Key_policy.accepts t.key_policy key) ->
+      problem (Problem.bad_request "invalid_idempotency_key")
+    | Some key -> run t handler req key
+  ;;
+
   let middleware t : Router.Middleware.t =
     fun handler req ->
-    if not (unsafe req.meth)
-    then handler req
-    else (
-      match Request.header req header_name with
-      | None when t.required -> problem (Problem.bad_request "idempotency_key_missing")
-      | None -> handler req
-      | Some key when not (Key_policy.accepts t.key_policy key) ->
-        problem (Problem.bad_request "invalid_idempotency_key")
-      | Some key -> run t handler req key)
+    if not (unsafe req.meth) then handler req else guard t handler req >>| mark t
   ;;
 
   let purge t =

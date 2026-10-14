@@ -116,6 +116,17 @@ module Failure : sig
         the record is removed instead *)
 end
 
+(** Which responses carry [Idempotent-Replayed]. *)
+module Replayed_header : sig
+  type t =
+    | On_replay (** only replays, with [true]; the default *)
+    | Always
+    (** every response to a POST, PUT, PATCH or DELETE through the middleware: [true] on a
+        replay, [false] otherwise (first runs, refusals, requests without a key), so a
+        client can tell the two apart without knowing the server's default *)
+  [@@deriving sexp, compare, equal]
+end
+
 (** The request header, ["idempotency-key"]. *)
 val header_name : string
 
@@ -158,7 +169,9 @@ module Make (Store : Store) : sig
       a failed claim answers 503 [idempotency_unavailable] without running the handler.
       [on_handler_exn] (default {!Failure.Release}) says what happens to the key when the
       handler raises; the exception is raised again either way. [key_policy] (default
-      {!Key_policy.strict}) decides which keys are well formed. *)
+      {!Key_policy.strict}) decides which keys are well formed. [replayed_header] (default
+      {!Replayed_header.On_replay}) decides which responses carry [Idempotent-Replayed].
+      Stored responses never include the [false] marker. *)
   val create
     :  ?retention:Time_ns.Span.t
     -> ?stale_after:Time_ns.Span.t
@@ -168,6 +181,7 @@ module Make (Store : Store) : sig
     -> ?on_store_error:(Error.t -> unit)
     -> ?on_handler_exn:Failure.t
     -> ?key_policy:Key_policy.t
+    -> ?replayed_header:Replayed_header.t
     -> store:Store.t
     -> clock:Clock.t
     -> unit
