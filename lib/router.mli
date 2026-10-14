@@ -111,8 +111,15 @@ end
 (** A list of routes with global middleware. *)
 type t
 
-(** A router. Raises when two routes share a method and a pattern. *)
-val create : ?middleware:Middleware.t list -> Route.t list -> t
+(** A router. Raises when two routes share a method and a pattern. [render_problem]
+    (default: {!Response.problem}) renders the router's own 404 and 405 answers through
+    {!Response.render_problem}, so they can use the service's error body; the [Allow]
+    header of a 405 is kept. *)
+val create
+  :  ?middleware:Middleware.t list
+  -> ?render_problem:(Request.t -> Problem.t -> Response.t)
+  -> Route.t list
+  -> t
 
 (** Every route's method and pattern, in order. *)
 val routes : t -> (string * string) list

@@ -90,9 +90,10 @@ end
 type t =
   { routes : Route.t list
   ; middleware : Middleware.t
+  ; render_problem : Request.t -> Problem.t -> Response.t
   }
 
-let create ?(middleware = []) routes =
+let create ?(middleware = []) ?(render_problem = fun _ p -> Response.problem p) routes =
   let described =
     List.map routes ~f:(fun r ->
       let meth, pattern = Route.describe r in
@@ -102,7 +103,7 @@ let create ?(middleware = []) routes =
    | Some (meth, pattern) ->
      raise_s [%message "Router.create: repeated route" meth pattern]
    | None -> ());
-  { routes; middleware = Middleware.compose middleware }
+  { routes; middleware = Middleware.compose middleware; render_problem }
 ;;
 
 let routes t =
@@ -115,6 +116,8 @@ let routes t =
 let same_meth a b =
   String.equal (Cohttp.Code.string_of_method a) (Cohttp.Code.string_of_method b)
 ;;
+
+let refuse t req p = return (Response.render_problem ~render:t.render_problem req p)
 
 let handle t (req : Request.t) =
   let matching =
@@ -130,10 +133,10 @@ let handle t (req : Request.t) =
      | (Route.T first, _) :: _ ->
        let allowed = List.map matching ~f:(fun (Route.T r, _) -> r.meth) in
        t.middleware
-         (fun _ -> return (Response.problem (Problem.method_not_allowed ~allowed)))
+         (fun req -> refuse t req (Problem.method_not_allowed ~allowed))
          { req with route = Path.pattern first.path }
      | [] ->
        t.middleware
-         (fun _ -> return (Response.problem (Problem.not_found "not_found")))
+         (fun req -> refuse t req (Problem.not_found "not_found"))
          { req with route = "unmatched" })
 ;;
