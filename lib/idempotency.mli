@@ -122,6 +122,23 @@ val header_name : string
 (** Whether a key is acceptable: 1 to 255 visible ASCII characters. *)
 val valid_key : string -> bool
 
+(** Which keys the middleware accepts. The draft only asks for a string, so clients
+    differ: most send a UUID, some send free text. *)
+module Key_policy : sig
+  type t [@@deriving sexp_of]
+
+  (** {!valid_key}: 1 to 255 visible ASCII characters. The default. *)
+  val strict : t
+
+  (** Any non-empty, valid UTF-8 string of at most [max_bytes] bytes (default 255), spaces
+      included. Raises if [max_bytes] is below 1. Keys are compared byte for byte, so two
+      spellings of the same text (say composed and decomposed accents) are two keys. *)
+  val permissive : ?max_bytes:int -> unit -> t
+
+  (** Whether the policy accepts [key]. *)
+  val accepts : t -> string -> bool
+end
+
 (** The digest that tells two requests apart: method, path and query, and the body as
     canonical JSON (or raw bytes when it is not JSON). *)
 val request_digest : Request.t -> string
@@ -140,7 +157,8 @@ module Make (Store : Store) : sig
       [idempotency_key_missing]. [on_store_error] sees store failures (default: ignored);
       a failed claim answers 503 [idempotency_unavailable] without running the handler.
       [on_handler_exn] (default {!Failure.Release}) says what happens to the key when the
-      handler raises; the exception is raised again either way. *)
+      handler raises; the exception is raised again either way. [key_policy] (default
+      {!Key_policy.strict}) decides which keys are well formed. *)
   val create
     :  ?retention:Time_ns.Span.t
     -> ?stale_after:Time_ns.Span.t
@@ -149,13 +167,15 @@ module Make (Store : Store) : sig
     -> ?required:bool
     -> ?on_store_error:(Error.t -> unit)
     -> ?on_handler_exn:Failure.t
+    -> ?key_policy:Key_policy.t
     -> store:Store.t
     -> clock:Clock.t
     -> unit
     -> t
 
   (** Applies the rules above to POST, PUT, PATCH and DELETE requests that carry a key
-      (400 [invalid_idempotency_key] for a malformed one); other requests pass through. *)
+      (400 [invalid_idempotency_key] for one the key policy refuses); other requests pass
+      through. *)
   val middleware : t -> Router.Middleware.t
 
   (** Removes records past retention; run it periodically. *)

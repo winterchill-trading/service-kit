@@ -155,6 +155,31 @@ let valid_key k =
   && String.for_all k ~f:(fun c -> Char.to_int c >= 0x21 && Char.to_int c <= 0x7e)
 ;;
 
+module Key_policy = struct
+  type t =
+    | Strict
+    | Permissive of { max_bytes : int }
+  [@@deriving sexp_of]
+
+  let strict = Strict
+
+  let permissive ?(max_bytes = 255) () =
+    if max_bytes < 1
+    then
+      raise_s
+        [%message "Idempotency.Key_policy.permissive: max_bytes < 1" (max_bytes : int)];
+    Permissive { max_bytes }
+  ;;
+
+  let accepts t key =
+    match t with
+    | Strict -> valid_key key
+    | Permissive { max_bytes } ->
+      let n = String.length key in
+      n >= 1 && n <= max_bytes && String.Utf8.is_valid key
+  ;;
+end
+
 let rec canonical (json : Yojson.Safe.t) : Yojson.Safe.t =
   match json with
   | `Assoc fields ->
@@ -205,6 +230,7 @@ module Make (Store : Store) = struct
     ; required : bool
     ; on_store_error : Error.t -> unit
     ; on_handler_exn : Failure.t
+    ; key_policy : Key_policy.t
     ; store : Store.t
     ; clock : Kit_clock.t
     }
@@ -217,6 +243,7 @@ module Make (Store : Store) = struct
     ?(required = false)
     ?(on_store_error = ignore)
     ?(on_handler_exn = Failure.Release)
+    ?(key_policy = Key_policy.strict)
     ~store
     ~clock
     ()
@@ -228,6 +255,7 @@ module Make (Store : Store) = struct
     ; required
     ; on_store_error
     ; on_handler_exn
+    ; key_policy
     ; store
     ; clock
     }
@@ -336,7 +364,7 @@ module Make (Store : Store) = struct
       match Request.header req header_name with
       | None when t.required -> problem (Problem.bad_request "idempotency_key_missing")
       | None -> handler req
-      | Some key when not (valid_key key) ->
+      | Some key when not (Key_policy.accepts t.key_policy key) ->
         problem (Problem.bad_request "invalid_idempotency_key")
       | Some key -> run t handler req key)
   ;;
