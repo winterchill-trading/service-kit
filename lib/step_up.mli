@@ -36,6 +36,7 @@ module type Purpose = sig
   (** A stable wire name, written into grants. *)
   val to_string : t -> string
 
+  (** Inverse of [to_string]; [None] for unknown names. *)
   val of_string : string -> t option
 end
 
@@ -64,6 +65,7 @@ module Memory_spent : sig
   val length : t -> int
 end
 
+(** Why a grant was refused. *)
 module Error : sig
   type t =
     | Malformed
@@ -80,7 +82,9 @@ module Error : sig
   val to_problem : t -> Problem.t
 end
 
+(** Grants for the application's purposes, consumed through [Spent]. *)
 module Make (Purpose : Purpose) (Spent : Spent) : sig
+  (** A verified grant. *)
   module Grant : sig
     type t =
       { grant_id : string

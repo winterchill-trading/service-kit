@@ -28,6 +28,7 @@
 
 open! Core
 
+(** What a key is unique within. *)
 module Scope : sig
   type t =
     { caller : string (** e.g. the session subject *)
@@ -38,6 +39,7 @@ module Scope : sig
   [@@deriving sexp, compare, equal, hash]
 end
 
+(** A response as stored for replay. *)
 module Stored : sig
   type t =
     { status : int
@@ -47,6 +49,7 @@ module Stored : sig
   [@@deriving sexp, compare, equal]
 end
 
+(** One key's record. *)
 module Record : sig
   type state =
     | In_progress
@@ -62,6 +65,7 @@ module Record : sig
   [@@deriving sexp, compare, equal]
 end
 
+(** Where records live. *)
 module type Store = sig
   type t
 
@@ -92,6 +96,7 @@ end
 module Memory_store : sig
   include Store
 
+  (** An empty store. *)
   val create : unit -> t
 
   (** Records currently held. *)
@@ -108,6 +113,7 @@ val valid_key : string -> bool
     canonical JSON (or raw bytes when it is not JSON). *)
 val request_digest : Request.t -> string
 
+(** The middleware over a given store. *)
 module Make (Store : Store) : sig
   type t
 
@@ -139,6 +145,7 @@ module Make (Store : Store) : sig
   val purge : t -> int Or_error.t Async.Deferred.t
 end
 
+(** Bin_prot shapes for stores that serialise records. *)
 module Stable : sig
   module Record : sig
     module V1 : sig

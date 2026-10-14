@@ -27,6 +27,7 @@ val to_yojson : t -> Yojson.Safe.t
 
 (** What a service knows about its codes. *)
 module Catalogue : sig
+  (** What the catalogue says about one code. *)
   module Entry : sig
     type t =
       { params : (string * Param.Kind.t) list (** every parameter the code takes *)
@@ -79,6 +80,7 @@ module Catalogue : sig
   val to_yojson : t -> Yojson.Safe.t
 end
 
+(** Bin_prot shape, for event logs and queues. *)
 module Stable : sig
   module V1 : sig
     type nonrec t = t [@@deriving bin_io, sexp, compare, equal]

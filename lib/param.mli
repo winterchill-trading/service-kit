@@ -53,6 +53,7 @@ val params_to_yojson : (string * t) list -> Yojson.Safe.t
     ASCII letters, digits and underscores, starting with a letter. *)
 val is_valid_name : string -> bool
 
+(** Bin_prot shapes. *)
 module Stable : sig
   module V1 : sig
     type nonrec t = t [@@deriving bin_io, sexp, compare, equal]

@@ -16,6 +16,7 @@
 open! Core
 open! Async
 
+(** One dependency check. *)
 module Check : sig
   type t
 
@@ -28,6 +29,7 @@ module Check : sig
     -> t
 end
 
+(** The checks behind [/readyz]. *)
 type t
 
 (** A set of checks. *)

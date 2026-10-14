@@ -5,6 +5,7 @@
 
 open! Core
 
+(** A source of the current time. *)
 type t
 
 (** The system clock ([Time_ns.now]). *)

@@ -20,6 +20,7 @@
 
 open! Core
 
+(** Cursors over positions of type [Position.t]. *)
 module Cursor (Position : sig
     type t [@@deriving bin_io, sexp_of]
   end) : sig
@@ -36,6 +37,7 @@ end
     default). *)
 val limit : ?default:int -> ?max:int -> string option -> (int, Problem.t) Result.t
 
+(** One page of results. *)
 module Page : sig
   type 'a t =
     { items : 'a list

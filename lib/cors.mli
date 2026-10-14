@@ -9,6 +9,7 @@
 
 open! Core
 
+(** A CORS policy. *)
 type t
 
 (** [origins] lists exact origins such as ["https://app.example.com"]; [`Any] allows every

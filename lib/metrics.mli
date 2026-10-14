@@ -28,12 +28,14 @@
 
 open! Core
 
+(** A registry of metrics. *)
 type t
 
 (** An empty registry. [namespace], when given, is prefixed to every name with an
     underscore. *)
 val create : ?namespace:string -> unit -> t
 
+(** Monotonic counters. *)
 module Counter : sig
   type registry := t
   type t
@@ -47,6 +49,7 @@ module Counter : sig
   val incr : ?by:float -> t -> string list -> unit
 end
 
+(** Values that go up and down. *)
 module Gauge : sig
   type registry := t
   type t
@@ -65,6 +68,7 @@ module Gauge : sig
   val computed : ?help:string -> registry -> string -> (unit -> float) -> unit
 end
 
+(** Distributions over fixed buckets. *)
 module Histogram : sig
   type registry := t
   type t

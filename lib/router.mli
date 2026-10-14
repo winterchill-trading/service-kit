@@ -30,8 +30,10 @@
 open! Core
 open! Async
 
+(** Handlers answer a request asynchronously. *)
 type handler = Request.t -> Response.t Deferred.t
 
+(** Handler wrappers. *)
 module Middleware : sig
   (** A middleware wraps a handler: it can change the request, answer on its own, or
       change the response. *)
@@ -42,6 +44,7 @@ module Middleware : sig
   val compose : t list -> t
 end
 
+(** Typed paths. *)
 module Path : sig
   (** A path parameter: how to read one segment. *)
   type 'a var
@@ -74,6 +77,7 @@ module Path : sig
   val parse : ('fn, 'r) t -> string list -> 'fn -> 'r option
 end
 
+(** One method and path with its handler. *)
 module Route : sig
   type t
 
@@ -104,6 +108,7 @@ module Route : sig
   val describe : t -> Cohttp.Code.meth * string
 end
 
+(** A list of routes with global middleware. *)
 type t
 
 (** A router. Raises when two routes share a method and a pattern. *)

@@ -16,6 +16,7 @@
 
 open! Core
 
+(** Signing keys by id. *)
 module Keyring : sig
   type t
 
@@ -28,6 +29,7 @@ module Keyring : sig
   val current_id : t -> string
 end
 
+(** What a token says. *)
 module Claims : sig
   type t =
     { session_id : string (** 32 hex characters, the same across rotations *)
@@ -46,6 +48,7 @@ module Claims : sig
   end
 end
 
+(** Why a token was refused. *)
 module Error : sig
   type t =
     | Malformed
@@ -61,6 +64,7 @@ module Error : sig
   val to_problem : t -> Problem.t
 end
 
+(** Session settings: keys, lifetimes and the revocation hook. *)
 type t
 
 (** [ttl] (default 24 hours) is the lifetime of each token; [max_lifetime] (default 30

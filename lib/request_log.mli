@@ -11,6 +11,7 @@
 
 open! Core
 
+(** One request, as logged. *)
 module Entry : sig
   type t =
     { request_id : string
@@ -29,6 +30,7 @@ module Entry : sig
   val to_yojson : t -> Yojson.Safe.t
 end
 
+(** What to hide. *)
 module Redact : sig
   type t
 

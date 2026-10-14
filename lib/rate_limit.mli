@@ -15,6 +15,7 @@
 
 open! Core
 
+(** Bucket size and refill rate. *)
 module Config : sig
   type t = private
     { burst : int (** bucket size, at least 1 *)
@@ -29,6 +30,7 @@ module Config : sig
   val per_minute : burst:int -> int -> t
 end
 
+(** The answer to one request. *)
 module Decision : sig
   type t =
     | Allowed of { remaining : int (** whole tokens left after this request *) }
