@@ -58,6 +58,19 @@ module type Bindings = sig
          Async.Deferred.t
 end
 
+module type Timed_bindings = sig
+  type t
+
+  val bind
+    :  t
+    -> grant_id:string
+    -> binding:Binding.t
+    -> until:Time_ns.t
+    -> now:Time_ns.t
+    -> [ `Bound | `Same_request | `Other_request of Binding.t ] Or_error.t
+         Async.Deferred.t
+end
+
 module Memory_bindings = struct
   type t =
     { clock : Clock.t
@@ -66,8 +79,7 @@ module Memory_bindings = struct
 
   let create ~clock () = { clock; bound = String.Table.create () }
 
-  let bind t ~grant_id ~binding ~until =
-    let now = Clock.now t.clock in
+  let bind_at t ~grant_id ~binding ~until ~now =
     Hashtbl.filter_inplace t.bound ~f:(fun (_, u) -> Time_ns.( > ) u now);
     match Hashtbl.find t.bound grant_id with
     | Some (existing, _) ->
@@ -79,6 +91,16 @@ module Memory_bindings = struct
       Async.return (Ok `Bound)
   ;;
 
+  let bind t ~grant_id ~binding ~until =
+    bind_at t ~grant_id ~binding ~until ~now:(Clock.now t.clock)
+  ;;
+
+  module Timed = struct
+    type nonrec t = t
+
+    let bind = bind_at
+  end
+
   let length t = Hashtbl.length t.bound
 end
 
@@ -86,9 +108,11 @@ module Mode = struct
   type t =
     | Consume_once
     | Bind_on_first_use : (module Bindings with type t = 'a) * 'a -> t
+    | Bind_on_first_use_timed : (module Timed_bindings with type t = 'a) * 'a -> t
 
   let consume_once = Consume_once
   let bind_on_first_use m store = Bind_on_first_use (m, store)
+  let bind_on_first_use_timed m store = Bind_on_first_use_timed (m, store)
 end
 
 module Error = struct
@@ -234,6 +258,13 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
       | Error e -> Error (Error.Store_failed e))
   ;;
 
+  let bound grant result =
+    Async.Deferred.map result ~f:(function
+      | Ok (`Bound | `Same_request) -> Ok grant
+      | Ok (`Other_request _) -> Error Error.Already_used
+      | Error e -> Error (Error.Store_failed e))
+  ;;
+
   let bind
     (type a)
     (module B : Bindings with type t = a)
@@ -241,12 +272,25 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
     (grant : Grant.t)
     binding
     =
-    Async.Deferred.map
-      (B.bind store ~grant_id:grant.grant_id ~binding ~until:grant.expires_at)
-      ~f:(function
-      | Ok (`Bound | `Same_request) -> Ok grant
-      | Ok (`Other_request _) -> Error Error.Already_used
-      | Error e -> Error (Error.Store_failed e))
+    bound grant (B.bind store ~grant_id:grant.grant_id ~binding ~until:grant.expires_at)
+  ;;
+
+  let bind_timed
+    (type a)
+    t
+    (module B : Timed_bindings with type t = a)
+    (store : a)
+    (grant : Grant.t)
+    binding
+    =
+    bound
+      grant
+      (B.bind
+         store
+         ~grant_id:grant.grant_id
+         ~binding
+         ~until:grant.expires_at
+         ~now:(Clock.now t.clock))
   ;;
 
   (* A binding no later request can repeat, for uses that do not allow retries. *)
@@ -262,6 +306,13 @@ module Make (Purpose : Purpose) (Spent : Spent) = struct
        | Consume_once -> consume_once t grant
        | Bind_on_first_use (m, store) ->
          bind
+           m
+           store
+           grant
+           (Option.value_or_thunk binding ~default:(fun () -> unrepeatable t))
+       | Bind_on_first_use_timed (m, store) ->
+         bind_timed
+           t
            m
            store
            grant

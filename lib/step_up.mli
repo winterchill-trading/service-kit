@@ -101,6 +101,24 @@ module type Bindings = sig
          Async.Deferred.t
 end
 
+(** A {!Bindings} store whose [bind] is told the current time, read from the clock given
+    to {!Make.create}. A store over a database compares [now] with stored expiry times
+    instead of the database's own clock, so a service and its tests (with a manual clock)
+    agree on when a binding has lapsed. *)
+module type Timed_bindings = sig
+  type t
+
+  (** As {!Bindings.bind}; [now] is the grant checker's current time. *)
+  val bind
+    :  t
+    -> grant_id:string
+    -> binding:Binding.t
+    -> until:Time_ns.t
+    -> now:Time_ns.t
+    -> [ `Bound | `Same_request | `Other_request of Binding.t ] Or_error.t
+         Async.Deferred.t
+end
+
 (** An in-process {!Bindings} store for one instance and for tests. *)
 module Memory_bindings : sig
   include Bindings
@@ -108,6 +126,10 @@ module Memory_bindings : sig
   (** An empty store. Entries are dropped once [until] has passed, checked against [clock]
       on each [bind]. *)
   val create : clock:Clock.t -> unit -> t
+
+  (** The same store as a {!Timed_bindings}: entries are dropped once [until] has passed,
+      checked against the [now] each call is given ([clock] is not read). *)
+  module Timed : Timed_bindings with type t = t
 
   (** Entries currently remembered. *)
   val length : t -> int
@@ -124,6 +146,10 @@ module Mode : sig
       retries of that request; any other request gets [Already_used]. Bindings live in
       [store]; the {!Spent} store is not consulted in this mode. *)
   val bind_on_first_use : (module Bindings with type t = 'a) -> 'a -> t
+
+  (** {!bind_on_first_use} over a {!Timed_bindings} store: every [bind] receives the
+      current time from the clock given to {!Make.create}. *)
+  val bind_on_first_use_timed : (module Timed_bindings with type t = 'a) -> 'a -> t
 end
 
 (** Why a grant was refused. *)
